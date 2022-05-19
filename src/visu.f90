@@ -189,7 +189,7 @@ contains
   !
   subroutine write_snapshot(rho1, ux1, uy1, uz1, pp3, phi1, ep1, itime, num)
 
-    use decomp_2d, only : transpose_z_to_y, transpose_y_to_x
+    use decomp_2d ! , only : transpose_z_to_y, transpose_y_to_x
     use decomp_2d, only : mytype, xsize, ysize, zsize
     use decomp_2d, only : nrank
     use decomp_2d_io, only : decomp_2d_start_io
@@ -205,6 +205,8 @@ contains
     use var, only : pp2, ppi2, dip2, ph2, nymsize
     use var, only : ppi3, dip3, ph3, nzmsize
     use var, only : npress
+    ! @vsanc global buffers
+    use var, ONLY : send_1_r,send_2_r,recv_1_r, recv_2_r
 
     use tools, only : rescale_pressure
 
@@ -220,6 +222,8 @@ contains
     character(len=32), intent(out) :: num
 
     ! Local variables
+    ! @vsanc local handles for non-blocking calls
+    integer :: handle_1, handle_2
     integer :: is
     integer :: ierr
     character(len=30) :: scname
@@ -263,12 +267,16 @@ contains
     !WORK Z-PENCILS
     call interzpv(ppi3,pp3(:,:,:,1),dip3,sz,cifip6z,cisip6z,ciwip6z,cifz6,cisz6,ciwz6,&
     (ph3%zen(1)-ph3%zst(1)+1),(ph3%zen(2)-ph3%zst(2)+1),nzmsize,zsize(3),1)
+    call transpose_z_to_y_start(handle_1,ppi3,pp2,send_1_r,recv_1_r,ph3) !nxm nym nz
+
     !WORK Y-PENCILS
-    call transpose_z_to_y(ppi3,pp2,ph3) !nxm nym nz
+    call transpose_z_to_y_wait(handle_1,ppi3,pp2,send_1_r,recv_1_r,ph3) !nxm nym nz
     call interypv(ppi2,pp2,dip2,sy,cifip6y,cisip6y,ciwip6y,cify6,cisy6,ciwy6,&
             (ph3%yen(1)-ph3%yst(1)+1),nymsize,ysize(2),ysize(3),1)
+    call transpose_y_to_x_start(handle_2,ppi2,pp1,send_2_r,recv_2_r,ph2) !nxm ny nz
+
     !WORK X-PENCILS
-    call transpose_y_to_x(ppi2,pp1,ph2) !nxm ny nz
+    call transpose_y_to_x_wait(handle_2,ppi2,pp1,send_2_r,recv_2_r,ph2) !nxm ny nz
     call interxpv(ta1,pp1,di1,sx,cifip6,cisip6,ciwip6,cifx6,cisx6,ciwx6,&
             nxmsize,xsize(1),xsize(2),xsize(3),1)
 

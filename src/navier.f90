@@ -282,9 +282,13 @@ contains
     USE param
     USE decomp_2d
     USE variables
+ ! @vsanc include variables from global variables.f90
     USE var, ONLY: ta1, tb1, tc1, pp1, pgy1, pgz1, di1, &
          duxdxp2, uyp2, uzp2, duydypi2, upi2, ta2, dipp2, &
-         duxydxyp3, uzp3, po3, dipp3, nxmsize, nymsize, nzmsize
+         duxydxyp3, uzp3, po3, dipp3, nxmsize, nymsize, nzmsize, &
+         send_1_r, send_2_r, send_3_r, recv_1_r, recv_2_r, recv_3_r, &
+         send_4_r, send_5_r, send_6_r, recv_4_r, recv_5_r, recv_6_r
+
     USE MPI
     USE ibm_param
 
@@ -300,6 +304,8 @@ contains
     real(mytype),dimension(zsize(1),zsize(2),zsize(3)),intent(in) :: divu3
     real(mytype),dimension(ph1%zst(1):ph1%zen(1),ph1%zst(2):ph1%zen(2),nzmsize) :: pp3
 
+    ! @vsanc non-blocking calls need an handle as an argument
+    integer :: handle_1,handle_2,handle_3, handle_4, handle_5, handle_6
     integer :: nvect3,i,j,k,nlock
     integer :: code
     real(mytype) :: tmax,tmoy,tmax1,tmoy1
@@ -316,7 +322,9 @@ contains
        tc1(:,:,:) = (one - ep1(:,:,:)) * uz1(:,:,:) + ep1(:,:,:)*ubcz
     endif
 
+    
     !WORK X-PENCILS
+    ! @vsanc non-blocking calls to transpose_xi_yi_start/wait
 
     call derxvp(pp1,ta1,di1,sx,cfx6,csx6,cwx6,xsize(1),nxmsize,xsize(2),xsize(3),0)
 
@@ -334,28 +342,37 @@ contains
        pp1(:,:,:) = pp1(:,:,:) + pgy1(:,:,:)
     endif
 
+    call transpose_x_to_y_start(handle_1,pp1,duxdxp2,send_1_r,recv_1_r,ph4)!->NXM NY NZ
+    
     call interxvp(pgy1,tb1,di1,sx,cifxp6,cisxp6,ciwxp6,xsize(1),nxmsize,xsize(2),xsize(3),1)
-    call interxvp(pgz1,tc1,di1,sx,cifxp6,cisxp6,ciwxp6,xsize(1),nxmsize,xsize(2),xsize(3),1)
+    call transpose_x_to_y_start(handle_2,pgy1,uyp2,send_2_r,recv_2_r,ph4)
 
-    call transpose_x_to_y(pp1,duxdxp2,ph4)!->NXM NY NZ
-    call transpose_x_to_y(pgy1,uyp2,ph4)
-    call transpose_x_to_y(pgz1,uzp2,ph4)
+    call interxvp(pgz1,tc1,di1,sx,cifxp6,cisxp6,ciwxp6,xsize(1),nxmsize,xsize(2),xsize(3),1)
+    call transpose_x_to_y_start(handle_3,pgz1,uzp2,send_3_r,recv_3_r,ph4)
 
     !WORK Y-PENCILS
+    ! @vsanc non-blocking calls to transpose
+    call transpose_x_to_y_wait(handle_1,pp1,duxdxp2,send_1_r,recv_1_r,ph4)!->NXM NY NZ 
     call interyvp(upi2,duxdxp2,dipp2,sy,cifyp6,cisyp6,ciwyp6,(ph1%yen(1)-ph1%yst(1)+1),ysize(2),nymsize,ysize(3),1)
+    
+    call transpose_x_to_y_wait(handle_2,pgy1,uyp2,send_2_r,recv_2_r,ph4)
     call deryvp(duydypi2,uyp2,dipp2,sy,cfy6,csy6,cwy6,ppyi,(ph1%yen(1)-ph1%yst(1)+1),ysize(2),nymsize,ysize(3),0)
 
     !! Compute sum dudx + dvdy
     duydypi2(:,:,:) = duydypi2(:,:,:) + upi2(:,:,:)
+    call transpose_y_to_z_start(handle_4, duydypi2,duxydxyp3,send_4_r, recv_4_r, ph3)!->NXM NYM NZ
 
+    call transpose_x_to_y_wait(handle_3,pgz1,uzp2,send_3_r,recv_3_r,ph4)
     call interyvp(upi2,uzp2,dipp2,sy,cifyp6,cisyp6,ciwyp6,(ph1%yen(1)-ph1%yst(1)+1),ysize(2),nymsize,ysize(3),1)
-
-    call transpose_y_to_z(duydypi2,duxydxyp3,ph3)!->NXM NYM NZ
-    call transpose_y_to_z(upi2,uzp3,ph3)
+    call transpose_y_to_z_start(handle_5,upi2,uzp3,send_5_r,recv_5_r,ph3)
 
     !WORK Z-PENCILS
+    ! @vsanc non-blocking calls to transpose
+    call transpose_y_to_z_wait(handle_4, duydypi2,duxydxyp3,send_4_r, recv_4_r, ph3)!->NXM NYM NZ
     call interzvp(pp3,duxydxyp3,dipp3,sz,cifzp6,ciszp6,ciwzp6,(ph1%zen(1)-ph1%zst(1)+1),&
          (ph1%zen(2)-ph1%zst(2)+1),zsize(3),nzmsize,1)
+
+    call transpose_y_to_z_wait(handle_5,upi2,uzp3,send_5_r, recv_5_r,ph3)
     call derzvp(po3,uzp3,dipp3,sz,cfz6,csz6,cwz6,(ph1%zen(1)-ph1%zst(1)+1),&
          (ph1%zen(2)-ph1%zst(2)+1),zsize(3),nzmsize,0)
 
@@ -410,45 +427,60 @@ contains
     USE decomp_2d
     USE variables
     USE MPI
+    ! @vsanc include variables for buffers from global namespace
     USE var, only: pp1,pgy1,pgz1,di1,pp2,ppi2,pgy2,pgz2,pgzi2,dip2,&
-         pgz3,ppi3,dip3,nxmsize,nymsize,nzmsize
+         pgz3,ppi3,dip3,nxmsize,nymsize,nzmsize, &
+         send_1_r, send_2_r, send_3_r, recv_1_r, recv_2_r, recv_3_r, &
+         send_4_r, send_5_r, send_6_r, recv_4_r, recv_5_r, recv_6_r
 
     USE forces, only : iforces, ppi1
 
     implicit none
 
+    ! @vsanc non-blocking calls need an handle as an argument
+    integer :: handle_1, handle_2, handle_3, handle_4, handle_5, handle_6
     integer :: i,j,k
 
     real(mytype),dimension(ph3%zst(1):ph3%zen(1),ph3%zst(2):ph3%zen(2),nzmsize) :: pp3
     real(mytype),dimension(xsize(1),xsize(2),xsize(3)) :: px1,py1,pz1
 
     !WORK Z-PENCILS
+    ! @vsanc non-blocking calls to transpose
     call interzpv(ppi3,pp3,dip3,sz,cifip6z,cisip6z,ciwip6z,cifz6,cisz6,ciwz6,&
          (ph3%zen(1)-ph3%zst(1)+1),(ph3%zen(2)-ph3%zst(2)+1),nzmsize,zsize(3),1)
+    call transpose_z_to_y_start(handle_5,ppi3,pp2,send_5_r,recv_5_r,ph3)
+    
     call derzpv(pgz3,pp3,dip3,sz,cfip6z,csip6z,cwip6z,cfz6,csz6,cwz6,&
          (ph3%zen(1)-ph3%zst(1)+1),(ph3%zen(2)-ph3%zst(2)+1),nzmsize,zsize(3),1)
+    call transpose_z_to_y_start(handle_4,pgz3,pgz2,send_4_r,recv_4_r,ph3) !nxm nym nz
 
     !WORK Y-PENCILS
-    call transpose_z_to_y(pgz3,pgz2,ph3) !nxm nym nz
-    call transpose_z_to_y(ppi3,pp2,ph3)
-
+    ! @vsanc non-blocking calls to transpose
+    call transpose_z_to_y_wait(handle_5,ppi3,pp2,send_5_r,recv_5_r,ph3)
     call interypv(ppi2,pp2,dip2,sy,cifip6y,cisip6y,ciwip6y,cify6,cisy6,ciwy6,&
          (ph3%yen(1)-ph3%yst(1)+1),nymsize,ysize(2),ysize(3),1)
+    call transpose_y_to_x_start(handle_1,ppi2,pp1,send_1_r,recv_1_r,ph2) !nxm ny nz
+
     call derypv(pgy2,pp2,dip2,sy,cfip6y,csip6y,cwip6y,cfy6,csy6,cwy6,ppy,&
          (ph3%yen(1)-ph3%yst(1)+1),nymsize,ysize(2),ysize(3),1)
+    call transpose_y_to_x_start(handle_2,pgy2,pgy1,send_2_r,recv_2_r,ph2)
+
+    call transpose_z_to_y_wait(handle_4,pgz3,pgz2,send_4_r,recv_4_r,ph3) !nxm nym nz
     call interypv(pgzi2,pgz2,dip2,sy,cifip6y,cisip6y,ciwip6y,cify6,cisy6,ciwy6,&
          (ph3%yen(1)-ph3%yst(1)+1),nymsize,ysize(2),ysize(3),1)
+    call transpose_y_to_x_start(handle_3,pgzi2,pgz1,send_3_r,recv_3_r,ph2)
 
     !WORK X-PENCILS
-
-    call transpose_y_to_x(ppi2,pp1,ph2) !nxm ny nz
-    call transpose_y_to_x(pgy2,pgy1,ph2)
-    call transpose_y_to_x(pgzi2,pgz1,ph2)
-
+    ! @vsanc non-blocking calls to transpose
+    call transpose_y_to_x_wait(handle_1,ppi2,pp1,send_1_r,recv_1_r, ph2) !nxm ny nz
     call derxpv(px1,pp1,di1,sx,cfip6,csip6,cwip6,cfx6,csx6,cwx6,&
          nxmsize,xsize(1),xsize(2),xsize(3),1)
+
+    call transpose_y_to_x_wait(handle_2,pgy2,pgy1,send_2_r,recv_2_r, ph2)
     call interxpv(py1,pgy1,di1,sx,cifip6,cisip6,ciwip6,cifx6,cisx6,ciwx6,&
          nxmsize,xsize(1),xsize(2),xsize(3),1)
+
+    call transpose_y_to_x_wait(handle_3,pgzi2,pgz1,send_3_r,recv_3_r,ph2)
     call interxpv(pz1,pgz1,di1,sx,cifip6,cisip6,ciwip6,cifx6,cisx6,ciwx6,&
          nxmsize,xsize(1),xsize(2),xsize(3),1)
 
@@ -1245,6 +1277,7 @@ contains
 
     call transpose_x_to_y(ux1,ux2)
     call transpose_x_to_y(uy1,uy2)
+
     ! Flow rate at the inlet
     ut1=zero;utt1=zero
     if (ystart(1)==1) then !! CPUs at the inlet

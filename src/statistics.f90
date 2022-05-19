@@ -310,6 +310,8 @@ contains
     use var, only : uvmean, uwmean
     use var, only : vwmean
     use var, only : phimean, phiphimean
+    ! @vsanc include variables from global variables.f90
+    use var, ONLY : send_1_r, send_2_r, recv_1_r, recv_2_r
 
     implicit none
 
@@ -319,6 +321,8 @@ contains
     real(mytype),dimension(ph1%zst(1):ph1%zen(1),ph1%zst(2):ph1%zen(2),nzmsize,npress) :: pp3
 
     !! Locals
+    ! @vsanc non-blocking calls need an handle as an argument
+    integer :: handle_1, handle_2
     integer :: is
     character(len=30) :: filename
 
@@ -334,14 +338,19 @@ contains
     !WORK Z-PENCILS
     call interzpv(ppi3,pp3(:,:,:,1),dip3,sz,cifip6z,cisip6z,ciwip6z,cifz6,cisz6,ciwz6,&
          (ph3%zen(1)-ph3%zst(1)+1),(ph3%zen(2)-ph3%zst(2)+1),nzmsize,zsize(3),1)
+    call transpose_z_to_y_start(handle_1,ppi3,pp2,send_1_r,recv_1_r,ph3) !nxm nym nz
+
     !WORK Y-PENCILS
-    call transpose_z_to_y(ppi3,pp2,ph3) !nxm nym nz
+    call transpose_z_to_y_wait(handle_1,ppi3,pp2,send_1_r,recv_1_r,ph3) !nxm nym nz
     call interypv(ppi2,pp2,dip2,sy,cifip6y,cisip6y,ciwip6y,cify6,cisy6,ciwy6,&
          (ph3%yen(1)-ph3%yst(1)+1),nymsize,ysize(2),ysize(3),1)
+    call transpose_y_to_x_start(handle_2,ppi2,pp1,send_2_r,recv_2_r,ph2) !nxm ny nz
+
     !WORK X-PENCILS
-    call transpose_y_to_x(ppi2,pp1,ph2) !nxm ny nz
+    call transpose_y_to_x_wait(handle_2,ppi2,pp1,send_2_r,recv_2_r,ph2) !nxm ny nz
     call interxpv(ta1,pp1,di1,sx,cifip6,cisip6,ciwip6,cifx6,cisx6,ciwx6,&
          nxmsize,xsize(1),xsize(2),xsize(3),1)
+
     ! Convert to physical pressure
     call rescale_pressure(ta1)
     call update_average_scalar(pmean, ta1, ep1)

@@ -5,13 +5,16 @@
 #   -DDOUBLE_PREC - use double-precision
 #   -DSAVE_SINGLE - Save 3D data in single-precision
 #   -DDEBG        - debuggin xcompact3d.f90
+#   -DOCC         - @vsanc Enable control flow for non-blocking MPI calls in the files in ./decomp2d/
 # generate a Git version string
 GIT_VERSION := $(shell git describe --tag --long --always)
 
-DEFS = -DDOUBLE_PREC -DVERSION=\"$(GIT_VERSION)\"
+# @vsanc enabled the OCC option
+DEFS = -DOCC -DDOUBLE_PREC -DVERSION=\"$(GIT_VERSION)\"
 
 LCL = local# local,lad,sdu,archer
 IVER = 17# 15,16,17,18
+# @vsanc compiled with gcc@8.3.1
 CMP = gcc# intel,gcc
 FFT = generic# generic,fftw3,mkl
 

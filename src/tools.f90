@@ -560,6 +560,12 @@ contains
     use decomp_2d
     use param
     use var, only: uxf1,uyf1,uzf1,uxf2,uyf2,uzf2,uxf3,uyf3,uzf3,di1,di2,di3,phif1,phif2,phif3
+    ! @vsanc global buffers for non-blocking calls
+    use var, ONLY :  send_1_r, send_2_r, send_3_r, recv_1_r, recv_2_r, recv_3_r, &
+         send_4_r, send_5_r, send_6_r, recv_4_r, recv_5_r, recv_6_r, &
+         send_7_r, send_8_r, send_9_r, recv_7_r, recv_8_r, recv_9_r, &
+         send_10_r, send_11_r, send_12_r, recv_10_r, recv_11_r, recv_12_r
+
     use variables
     use ibm_param, only : ubcx,ubcy,ubcz
 
@@ -570,6 +576,9 @@ contains
     real(mytype),dimension(ysize(1),ysize(2),ysize(3)) :: ux2,uy2,uz2, phi2
     real(mytype),dimension(zsize(1),zsize(2),zsize(3)) :: ux3,uy3,uz3, phi3
 
+    ! @vsanc  local handles for non-blocking calls
+    integer :: handle_1, handle_2, handle_3, handle_4, handle_5, handle_6, &
+                handle_7, handle_8, handle_9, handle_10, handle_11, handle_12
     integer :: i,j,k,npaire
 
     !if (iscalar == 1) phi11=phi1(:,:,:,1) !currently only first scalar
@@ -584,11 +593,19 @@ contains
       !if (iscalar == 1) phif1=phi11
     end if
 
-    call transpose_x_to_y(uxf1,ux2)
-    call transpose_x_to_y(uyf1,uy2)
-    call transpose_x_to_y(uzf1,uz2)
-    !if (iscalar == 1) call transpose_x_to_y(phif1,phi2)
+    !! @vsanc this was a pointless exercise I realised too late. There is no requirement of
+    !! asynchronity since there is no other task independent tasks being performed.
+    !! This subroutine is inherently blocking.
+    ! @vsanc non-blocking alltoall
+    call transpose_x_to_y_start(handle_1,uxf1,ux2,send_1_r,recv_1_r)
+    call transpose_x_to_y_start(handle_2,uyf1,uy2,send_2_r,recv_2_r)
+    call transpose_x_to_y_start(handle_3,uzf1,uz2,send_3_r,recv_3_r)
+    ! @vsanc put blocking waits
+    call transpose_x_to_y_wait(handle_1,uxf1,ux2,send_1_r,recv_1_r)
+    call transpose_x_to_y_wait(handle_2,uyf1,uy2,send_2_r,recv_2_r)
+    call transpose_x_to_y_wait(handle_3,uzf1,uz2,send_3_r,recv_3_r)
 
+    !if (iscalar == 1) call transpose_x_to_y(phif1,phi2)
     if (ifilter==1.or.ifilter==3) then ! all filter or y filter
       call fily(uxf2,ux2,di2,fisy,fiffyp,fifsyp,fifwyp,ysize(1),ysize(2),ysize(3),1,ubcx)
       call fily(uyf2,uy2,di2,fisy,fiffy,fifsy,fifwy,ysize(1),ysize(2),ysize(3),0,ubcy)

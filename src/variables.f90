@@ -103,12 +103,17 @@ module var
   ! arrays for inflow/outflow - precursor simulations
   real(mytype), save, allocatable, dimension(:,:,:) :: ux_inflow, uy_inflow, uz_inflow
   real(mytype), save, allocatable, dimension(:,:,:) :: ux_recoutflow, uy_recoutflow, uz_recoutflow
-
+  ! @vsanc buff_size for ialltoall
+  real(mytype), save, allocatable, dimension(:,:,:) :: send_1_r, send_2_r, send_3_r, recv_1_r, recv_2_r, recv_3_r
+  real(mytype), save, allocatable, dimension(:,:,:) :: send_4_r, send_5_r, send_6_r, recv_4_r, recv_5_r, recv_6_r
+  real(mytype), save, allocatable, dimension(:,:,:) :: send_7_r, send_8_r, send_9_r, recv_7_r, recv_8_r, recv_9_r
+  real(mytype), save, allocatable, dimension(:,:,:) :: send_10_r, send_11_r, send_12_r, recv_10_r, recv_11_r, recv_12_r
 contains
 
   subroutine init_variables
 
     TYPE(DECOMP_INFO), save :: ph! decomposition object
+    integer :: buf_size_x, buf_size_y, buf_size_z 
 
 #ifdef DEBG
     if (nrank == 0) write(*,*) '# Init_variables start'
@@ -136,6 +141,41 @@ contains
 
     !xstart(i), ystart(i), zstart(i), xend(i), yend(i), zend(i), i=1,2,3 - the starting and ending indices for each sub-domain, as in the global coordinate system. Obviously, it can be seen that xsize(i)=xend(i)-xstart(i)+1. It may be convenient for certain applications to use global coordinate (for example when extracting a 2D plane from a 3D domain, it is easier to know which process owns the plane if global index is used).
 
+    ! @vsanc Set buffer size for ialltoall calls
+    buf_size_x = max(ph%xsz(1), max(ph%ysz(1), ph%zsz(1)))
+    buf_size_y = max(ph%xsz(2), max(ph%ysz(2), ph%zsz(2)))
+    buf_size_z = max(ph%xsz(3), max(ph%ysz(3), ph%zsz(3)))
+         
+!#ifdef EVEN
+!    ! padded alltoall optimisation may need larger buffer space
+!    buf_size = max(buf_size, &
+!         max(ph%x1count*dims(1),ph%y2count*dims(2)) ) 
+!#endif
+    ! @vsanc allocate the respective buffers in memory
+    allocate(send_1_r(buf_size_x,buf_size_y,buf_size_z))
+    allocate(send_2_r(buf_size_x,buf_size_y,buf_size_z))
+    allocate(send_3_r(buf_size_x,buf_size_y,buf_size_z))
+    allocate(send_4_r(buf_size_x,buf_size_y,buf_size_z))
+    allocate(send_5_r(buf_size_x,buf_size_y,buf_size_z))
+    allocate(send_6_r(buf_size_x,buf_size_y,buf_size_z))
+    allocate(send_7_r(buf_size_x,buf_size_y,buf_size_z))
+    allocate(send_8_r(buf_size_x,buf_size_y,buf_size_z))
+    allocate(send_9_r(buf_size_x,buf_size_y,buf_size_z))
+    allocate(send_10_r(buf_size_x,buf_size_y,buf_size_z))
+    allocate(send_11_r(buf_size_x,buf_size_y,buf_size_z))
+    allocate(send_12_r(buf_size_x,buf_size_y,buf_size_z))
+    allocate(recv_1_r(buf_size_x,buf_size_y,buf_size_z))
+    allocate(recv_2_r(buf_size_x,buf_size_y,buf_size_z))
+    allocate(recv_3_r(buf_size_x,buf_size_y,buf_size_z))
+    allocate(recv_4_r(buf_size_x,buf_size_y,buf_size_z))
+    allocate(recv_5_r(buf_size_x,buf_size_y,buf_size_z))
+    allocate(recv_6_r(buf_size_x,buf_size_y,buf_size_z))
+    allocate(recv_7_r(buf_size_x,buf_size_y,buf_size_z))
+    allocate(recv_8_r(buf_size_x,buf_size_y,buf_size_z))
+    allocate(recv_9_r(buf_size_x,buf_size_y,buf_size_z))
+    allocate(recv_10_r(buf_size_x,buf_size_y,buf_size_z))
+    allocate(recv_11_r(buf_size_x,buf_size_y,buf_size_z))
+    allocate(recv_12_r(buf_size_x,buf_size_y,buf_size_z))
 
     !X PENCILS
     call alloc_x(ux1, opt_global=.true.) !global indices

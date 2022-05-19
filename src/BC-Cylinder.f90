@@ -357,6 +357,10 @@ contains
     USE var, only : ta1,tb1,tc1,td1,te1,tf1,tg1,th1,ti1,di1
     USE var, only : ta2,tb2,tc2,td2,te2,tf2,di2,ta3,tb3,tc3,td3,te3,tf3,di3
     use var, ONLY : nxmsize, nymsize, nzmsize
+    ! @vsanc include variables from global variables.f90
+    use var, ONLY : send_1_r, send_2_r, send_3_r, recv_1_r, recv_2_r, recv_3_r, &
+                    send_4_r, send_5_r, send_6_r, recv_4_r, recv_5_r, recv_6_r, &
+                    send_7_r, send_8_r, send_9_r, recv_7_r, recv_8_r, recv_9_r
     use visu, only : write_field
     use ibm_param, only : ubcx,ubcy,ubcz
 
@@ -368,6 +372,9 @@ contains
     real(mytype), intent(in), dimension(xsize(1),xsize(2),xsize(3)) :: ep1
     character(len=32), intent(in) :: num
 
+    ! @vsanc non-blocking calls need an handle as an argument
+    integer :: handle_1,handle_2,handle_3, handle_4, handle_5, handle_6, handle_7, handle_8, handle_9
+    
     ! Write vorticity as an example of post processing
 
     ! Perform communications if needed
@@ -385,24 +392,45 @@ contains
     call derx (ta1,ux1,di1,sx,ffx,fsx,fwx,xsize(1),xsize(2),xsize(3),0,ubcx)
     call derx (tb1,uy1,di1,sx,ffxp,fsxp,fwxp,xsize(1),xsize(2),xsize(3),1,ubcy)
     call derx (tc1,uz1,di1,sx,ffxp,fsxp,fwxp,xsize(1),xsize(2),xsize(3),1,ubcz)
+    
     !y-derivatives
     call dery (ta2,ux2,di2,sy,ffyp,fsyp,fwyp,ppy,ysize(1),ysize(2),ysize(3),1,ubcx)
+    call transpose_y_to_x_start(handle_7,ta2,td1,send_7_r,recv_7_r)
+
     call dery (tb2,uy2,di2,sy,ffy,fsy,fwy,ppy,ysize(1),ysize(2),ysize(3),0,ubcy)
+    call transpose_y_to_x_start(handle_8,tb2,te1,send_8_r,recv_8_r)
+
     call dery (tc2,uz2,di2,sy,ffyp,fsyp,fwyp,ppy,ysize(1),ysize(2),ysize(3),1,ubcz)
+    call transpose_y_to_x_start(handle_9,tc2,tf1,send_9_r,recv_9_r)
+    
     !!z-derivatives
     call derz (ta3,ux3,di3,sz,ffzp,fszp,fwzp,zsize(1),zsize(2),zsize(3),1,ubcx)
+    call transpose_z_to_y_start(handle_1,ta3,td2,send_1_r,recv_1_r)
+
     call derz (tb3,uy3,di3,sz,ffzp,fszp,fwzp,zsize(1),zsize(2),zsize(3),1,ubcy)
+    call transpose_z_to_y_start(handle_2,tb3,te2,send_2_r,recv_2_r)
+
     call derz (tc3,uz3,di3,sz,ffz,fsz,fwz,zsize(1),zsize(2),zsize(3),0,ubcz)
+    call transpose_z_to_y_start(handle_3,tc3,tf2,send_3_r,recv_3_r)
+    
     !!all back to x-pencils
-    call transpose_z_to_y(ta3,td2)
-    call transpose_z_to_y(tb3,te2)
-    call transpose_z_to_y(tc3,tf2)
-    call transpose_y_to_x(td2,tg1)
-    call transpose_y_to_x(te2,th1)
-    call transpose_y_to_x(tf2,ti1)
-    call transpose_y_to_x(ta2,td1)
-    call transpose_y_to_x(tb2,te1)
-    call transpose_y_to_x(tc2,tf1)
+    call transpose_z_to_y_wait(handle_1,ta3,td2,send_1_r,recv_1_r)
+    call transpose_y_to_x_start(handle_4,td2,tg1,send_4_r,recv_4_r)
+
+    call transpose_z_to_y_wait(handle_2,tb3,te2,send_2_r,recv_2_r)
+    call transpose_y_to_x_start(handle_5,te2,th1,send_5_r,recv_5_r)
+
+    call transpose_z_to_y_wait(handle_3,tc3,tf2,send_3_r,recv_3_r)
+    call transpose_y_to_x_start(handle_6,tf2,ti1,send_6_r,recv_6_r)
+
+    !! @vsanc wait for all the operands
+    call transpose_y_to_x_wait(handle_4,td2,tg1,send_4_r,recv_4_r)
+    call transpose_y_to_x_wait(handle_5,te2,th1,send_5_r,recv_5_r)
+    call transpose_y_to_x_wait(handle_6,tf2,ti1,send_6_r,recv_6_r)
+    call transpose_y_to_x_wait(handle_7,ta2,td1,send_7_r,recv_7_r)
+    call transpose_y_to_x_wait(handle_8,tb2,te1,send_8_r,recv_8_r)
+    call transpose_y_to_x_wait(handle_9,tc2,tf1,send_9_r,recv_9_r)
+    
     !du/dx=ta1 du/dy=td1 and du/dz=tg1
     !dv/dx=tb1 dv/dy=te1 and dv/dz=th1
     !dw/dx=tc1 dw/dy=tf1 and dw/dz=ti1

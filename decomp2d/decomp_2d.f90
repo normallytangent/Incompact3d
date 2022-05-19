@@ -1568,8 +1568,11 @@ contains
     implicit none
 
     integer :: handle, ierror
+    ! @vsanc local boolean: returns true if MPI call was a success, else false
+    logical :: flag
 
-    call NBC_TEST(handle,ierror)
+! @vsanc changed NBC_TEST to MPI_TEST to match our nonblocking calls
+    call MPI_TEST(handle,flag,MPI_STATUS_IGNORE,ierror)
 
     return
   end subroutine transpose_test

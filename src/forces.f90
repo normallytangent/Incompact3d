@@ -214,10 +214,16 @@ contains
 
     use var, only : ta1, tb1, tc1, td1, di1
     use var, only : ux2, uy2, ta2, tb2, tc2, td2, di2
+    ! @vsanc buffers for non-blocking calls
+    use var, ONLY : send_1_r, send_2_r, send_3_r, recv_1_r, recv_2_r, recv_3_r, &
+                    send_4_r, send_5_r, send_6_r, recv_4_r, recv_5_r, recv_6_r, &
+                    send_7_r, send_8_r, send_9_r, recv_7_r, recv_8_r, recv_9_r
 
     implicit none
     character(len=30) :: filename, filename2
     integer :: nzmsize
+    ! @vsanc local handles for non-blocking calls
+    integer :: handle_1,handle_2,handle_3,handle_4,handle_5,handle_6,handle_7,handle_8,handle_9 
     integer                                             :: i, iv, j, k, kk, code, jj
     integer                                             :: nvect1,nvect2,nvect3
 
@@ -251,6 +257,11 @@ contains
     nvect2=ysize(1)*ysize(2)*ysize(3)
     nvect3=zsize(1)*zsize(2)*zsize(3)
 
+    ! @vsanc start non-blocking calls as early as feasible since send buffers are ready
+    call transpose_x_to_y_start(handle_3,ux1,ux2,send_3_r,recv_3_r)
+    call transpose_x_to_y_start(handle_4,uy1,uy2,send_4_r,recv_4_r)
+    call transpose_x_to_y_start(handle_5,ppi1,ppi2,send_5_r,recv_5_r)
+
     do jj = 1, ny-1
        if (istret.eq.0) then
           del_y(jj)=dy
@@ -282,18 +293,20 @@ contains
     endif
 
     call derx (ta1,ux1,di1,sx,ffx,fsx,fwx,xsize(1),xsize(2),xsize(3),0,ubcx)    ! dudx
+    call transpose_x_to_y_start(handle_1,ta1,ta2,send_1_r,recv_1_r) ! dudx
+
     call derx (tb1,uy1,di1,sx,ffxp,fsxp,fwxp,xsize(1),xsize(2),xsize(3),1,ubcy) ! dvdx
-    call transpose_x_to_y(ta1,ta2) ! dudx
-    call transpose_x_to_y(tb1,tb2) ! dvdx
+    call transpose_x_to_y_start(handle_2,tb1,tb2,send_2_r,recv_2_r) ! dvdx
 
-    call transpose_x_to_y(ux1,ux2)
-    call transpose_x_to_y(uy1,uy2)
-    call transpose_x_to_y(ppi1,ppi2)
 
+    call transpose_x_to_y_wait(handle_3,ux1,ux2,send_3_r,recv_3_r)
     call dery (tc2,ux2,di2,sy,ffyp,fsyp,fwyp,ppy,ysize(1),ysize(2),ysize(3),1,ubcx) ! dudy
+    call transpose_y_to_x_start(handle_6,tc2,tc1,send_6_r,recv_6_r) ! dudy
+
+    call transpose_x_to_y_wait(handle_4,uy1,uy2,send_4_r,recv_4_r)
     call dery (td2,uy2,di2,sy,ffy,fsy,fwy,ppy,ysize(1),ysize(2),ysize(3),0,ubcy)    ! dvdy
-    call transpose_y_to_x(tc2,tc1) ! dudy
-    call transpose_y_to_x(td2,td1) ! dvdy
+    call transpose_y_to_x_start(handle_7,td2,td1,send_7_r,recv_7_r) ! dvdy
+
 
     !*****************************************************************
     !      Drag and Lift coefficients
@@ -358,6 +371,9 @@ contains
        tdiffyl=zero
        tpresxl=zero
        tpresyl=zero
+
+       call transpose_y_to_x_wait(handle_6,tc2,tc1,send_6_r,recv_6_r) ! dudy
+       call transpose_y_to_x_wait(handle_7,td2,td1,send_7_r,recv_7_r) ! dvdy
        !BC and AD : x-pencils
        !AD
        if ((jcvlw(iv).ge.xstart(2)).and.(jcvlw(iv).le.xend(2))) then
@@ -432,6 +448,11 @@ contains
              tdiffyl(kk)=tdiffyl(kk)+fdiy
           enddo
        endif
+
+       ! @vsanc non-blocking calls in place 
+       call transpose_x_to_y_wait(handle_1,ta1,ta2,send_1_r,recv_1_r) ! dudx
+       call transpose_x_to_y_wait(handle_2,tb1,tb2,send_2_r,recv_2_r) ! dvdx
+       call transpose_x_to_y_wait(handle_5,ppi1,ppi2,send_5_r,recv_5_r)
        !AB and DC : y-pencils
        !AB
        if ((icvlf(iv).ge.ystart(1)).and.(icvlf(iv).le.yend(1))) then
